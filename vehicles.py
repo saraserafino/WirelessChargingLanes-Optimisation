@@ -15,10 +15,6 @@ class EV: # Electric Vehicles
 
         self.omega = 0.33 # amount of energy received when traversing oncharging link per time unit
         self.epsilon = 0.00018 # electricity consumption rate
-
-    def state_of_energy(self, prev_energy, la, ta0, xa): # state of energy after traversing link 𝑎 on path 𝑝
-        self.energy = prev_energy - self.epsilon * la + self.omega * ta0 * xa # formula 2
-        return self.energy
     
 
 class ICV: # Internal Combustion Vehicles
