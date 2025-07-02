@@ -5,7 +5,7 @@ import vehicles
 
 # Chose some parameters:
 scalability = False # True for Braess networks, True for grid networks
-budget = 30000
+budget = 4500
 
 # The following lists are taken with respect to problem scalability
 ### seguendo le figure del paper in un file apposito scriviamo il dizionario e i paths
@@ -43,20 +43,22 @@ f = WCL.addVars(link, link, M, np.arange(0, T + timestep, timestep), lb=0) # ups
 
 # Feasibility of path
 
-WCL.addConstr(gb.quicksum(length[a] * x[a+1] for a in range(len(link))) <= budget) # formula 3: budget
+WCL.addConstr(gb.quicksum(length[a] * x[a+1] for a in link[1:-1]) <= budget) # formula 3: budget
 # State of energy after travelling on link 𝑎 is no greater than the battery capacity
 for p in range(len(paths)):
-    #### energia iniziale serve rimetterla?? tanto è già da EV. In caso:
-    # a0 = paths[p][0]
-    # WCL.addConstr(B[a0,p] == B0)
-    for i in range(1,len(paths[p])):
+    # formula 4: initial state of energy
+    a0 = paths[p][0]
+    WCL.addConstr(B[a0,p] == vehicles.B0)
+    for i in range(1,len(paths[p])-1):
         b = paths[p][i-1]
         a = paths[p][i]
         # formula 5: state of energy after traversing link 𝑎 on path 𝑝
         # travel time of link a at velocity Va is t0[a]=length[a]/vehicles.Va
         WCL.addConstr(B[a,p] <= B[b,p] - vehicles.epsilon * length[a-1] + vehicles.omega * length[a-1]/vehicles.Va * x[a])
-    for a in link: # formula 6: feasibility of path where M is arbitrary chosen to be 1000  ###### poi cerchiamo se ha senso
-        WCL.addConstr(B[a,p] >= 1000 * (y["EV",p]) - 1)
+    for a in link[1:-1]:
+        if a in paths[p]:
+            # formula 6: feasibility of path. M can be whatever because if y["EV",p]=1, then B[a,p]>=0, if =0 B[a,p]>=-something
+            WCL.addConstr(B[a,p] >= 1000 * (y["EV",p]) - 1)
 # Exactly one path must be chosen ##### nel ppt diciamo che questo constraint lo abbiamo aggiunto noi, nel paper non c'era
 WCL.addConstr(gb.quicksum(y["EV",p] for p in range(len(paths))) == 1)
 
@@ -64,45 +66,59 @@ WCL.addConstr(gb.quicksum(y["EV",p] for p in range(len(paths))) == 1)
 
 # Compute Kronecker's delta for formula 19
 deltaKron = {}
-for p_idx in range(len(paths)):
+for p in range(len(paths)):
     for a in link:
-        deltaKron[p_idx,a] = 1 if a in paths[p_idx] else 0
+        deltaKron[p,a] = 1 if a in paths[p] else 0
+
+# alpha aggregate link-based share factor of vehicle class 𝑚 of formula 14, must be defined as a variable
+# because it depends on u and otherwise it cannot be computed
+        ## spiega nel ppt
+alpha = WCL.addVars([link_source], M, np.arange(0, T + timestep, timestep), lb=0.0, ub=1.0)
+
+# Compute alpha of formula 14: aggregate link-based share factor of vehicle class 𝑚
+WCL.addConstr(gb.quicksum(alpha[link_source,m,t] for m in M for t in np.arange(0, T + timestep, timestep)) == 1)
+alpha_EV = gb.quicksum(u[link_source,"EV",t] for t in np.arange(0, T + timestep, timestep))
+alpha_ICV = gb.quicksum(u[link_source,"ICV",t] for t in np.arange(0, T + timestep, timestep))
+den_alpha = alpha_EV + alpha_ICV
+WCL.addConstr(gb.quicksum(alpha[link_source,"EV",t] for t in np.arange(0, T + timestep, timestep)) * den_alpha == alpha_EV)
+WCL.addConstr(gb.quicksum(alpha[link_source,"ICV",t] for t in np.arange(0, T + timestep, timestep)) * den_alpha == alpha_ICV)
 
 for a in link:
     for t in np.arange(0, T+timestep, timestep):
         # Formula 12: conservation of vehicle numbers
         WCL.addConstr(n[a,"EV",t] == gb.quicksum(u[a,"EV",k] - v[a,"EV",k] for k in np.arange(t+1)))
         WCL.addConstr(n[a,"ICV",t] == gb.quicksum(u[a,"ICV",k] - v[a,"ICV",k] for k in np.arange(t+1)))
-        # formula 13: upstream capacity
-        t_in = max(0, t - int(length[a-1]/vehicles.Va))
-        WCL.addConstr(gb.quicksum(u[a,"EV",k] for k in np.arange(t_in,t+1)) <= n[a,"EV",t])
-        WCL.addConstr(gb.quicksum(u[a,"ICV",k] for k in np.arange(t_in,t+1)) <= n[a,"ICV",t])
-        # formula 14: downstream capacity
-        t_out = max(0, t - int(length[a-1]/vehicles.Wa))
-        WCL.addConstr(n[a,"EV",t] + gb.quicksum(v[a,"EV",k] for k in range(t_out,t+1)) <= vehicles.Ka * length[a-1])
-        WCL.addConstr(n[a,"ICV",t] + gb.quicksum(v[a,"ICV",k] for k in range(t_out,t+1)) <= vehicles.Ka * length[a-1])
+        if a != link[0] and a!= link[-1]:
+            # formula 13: upstream capacity
+            t_in = max(0, t - int(length[a-1]/vehicles.Va))
+            WCL.addConstr(gb.quicksum(u[a,"EV",k] for k in np.arange(t_in,t+1)) <= n[a,"EV",t])
+            WCL.addConstr(gb.quicksum(u[a,"ICV",k] for k in np.arange(t_in,t+1)) <= n[a,"ICV",t])
+            # formula 14: downstream capacity
+            t_out = max(0, t - int(length[a-1]/vehicles.Wa))
+            WCL.addConstr(n[a,"EV",t] + gb.quicksum(v[a,"EV",k] for k in range(t_out,t+1)) <= vehicles.Ka * length[a-1] * alpha[link_source,"EV",t])
+            WCL.addConstr(n[a,"ICV",t] + gb.quicksum(v[a,"ICV",k] for k in range(t_out,t+1)) <= vehicles.Ka * length[a-1] * alpha[link_source,"ICV",t])
+            # formula 19: flow capacity of EV on links
+            WCL.addConstr(gb.quicksum(f[b,a,"EV",t] for b in link) <= vehicles.Qa * gb.quicksum(deltaKron[p,a] * y["EV",p] for p in range(len(paths))))
+            WCL.addConstr(gb.quicksum(f[b,a,"ICV",t] for b in link) <= vehicles.Qa * gb.quicksum(deltaKron[p,a] * y["ICV",p] for p in range(len(paths))))
         if a != link[0]: # no source link
             # formula 16: flux conservation for incoming vehicles
-            WCL.addConstr(u[a,"EV",t] == gb.quicksum(f[b,a,"EV",t] for b in link[1:]))
-            WCL.addConstr(u[a,"ICV",t] == gb.quicksum(f[b,a,"ICV",t] for b in link[1:]))
+            WCL.addConstr(u[a,"EV",t] == gb.quicksum(f[b,a,"EV",t] for b in link))
+            WCL.addConstr(u[a,"ICV",t] == gb.quicksum(f[b,a,"ICV",t] for b in link))
         if a != link[-1]: # no sink link
             # formula 17: flux conservation for outgoing vehicles
             WCL.addConstr(v[a,"EV",t] == gb.quicksum(f[b,a,"EV",t] for b in link[:-1]))
             WCL.addConstr(v[a,"ICV",t] == gb.quicksum(f[b,a,"ICV",t] for b in link[:-1]))
-            if a != link[0]: # neither source link so a is normal link
-                # formula 19: flow capacity of EV on links
-                WCL.addConstr(gb.quicksum(f[b,a,"EV",t] for b in link[1:-1]) <= vehicles.Qa * gb.quicksum(deltaKron[p_idx,a] * y["EV",p_idx] for p_idx in range(len(paths))))
-                WCL.addConstr(gb.quicksum(f[b,a,"ICV",t] for b in link[1:-1]) <= vehicles.Qa * gb.quicksum(deltaKron[p_idx,a] * y["ICV",p_idx] for p_idx in range(len(paths))))
 
-# formula 15: source link constraint is the demand rate of vehicle M at time step t
-WCL.addConstr(u[a,"EV",t] == vehicles.Da)
-WCL.addConstr(u[a,"ICV",t] == vehicles.Da)
-# formula 18: sink link constraint
-WCL.addConstr(v[a,"EV",t] == 0)
-WCL.addConstr(v[a,"ICV",t] == 0)
+for t in np.arange(0, T + timestep, timestep):
+    # formula 15: source link constraint is the demand rate of vehicle M at time step t
+    WCL.addConstr(u[link_source,"EV",t] == vehicles.Da)
+    WCL.addConstr(u[link_source,"ICV",t] == vehicles.Da)
+    # formula 18: sink link constraint
+    WCL.addConstr(v[link_sink,"EV",t] == 0)
+    WCL.addConstr(v[link_sink,"ICV",t] == 0)
 
 # Supply and demand at node
-
+## spiega nel ppt
 # Since the minimum between an int and a linear expression of Gurobi cannot be done,
 # define supply and demand as variables with constraint to be smaller them
 S = WCL.addVars(link, np.arange(0, T + timestep, timestep), lb=0)
@@ -144,7 +160,5 @@ for a in link:
         WCL.addConstr(D[a,t] <= demand_sum)
         WCL.addConstr(u[a,"ICV",t] <= D[a,t])
 
-
-#WCL.setObjective(gb.quicksum((len(np.arange(0, T, timestep)) + 1 - i) * f[a, b, i, m] for m in M for i in T for a in link_sink for b in link[1:]))
 WCL.setObjective(gb.quicksum((len(np.arange(0, T+timestep, timestep)) + 1 - t) * f[b, link[-1], m, t] for m in M for t in np.arange(0, T+timestep, timestep) for b in link[1:]))
 WCL.optimize()
