@@ -43,7 +43,7 @@ f = WCL.addVars(link, link, M, np.arange(0, T + timestep, timestep), lb=0) # ups
 
 # Feasibility of path
 
-WCL.addConstr(gb.quicksum(length[a] * x[a+1] for a in link[1:-1]) <= budget) # formula 3: budget
+WCL.addConstr(gb.quicksum(length[a] * x[a] for a in link[1:-1]) <= budget) # formula 3: budget
 # State of energy after travelling on link 𝑎 is no greater than the battery capacity
 for p in range(len(paths)):
     # formula 4: initial state of energy
@@ -58,7 +58,7 @@ for p in range(len(paths)):
     for a in link[1:-1]:
         if a in paths[p]:
             # formula 6: feasibility of path. M can be whatever because if y["EV",p]=1, then B[a,p]>=0, if =0 B[a,p]>=-something
-            WCL.addConstr(B[a,p] >= 1000 * (y["EV",p]) - 1)
+            WCL.addConstr(B[a,p] >= 10 * (y["EV",p] - 1))
 # Exactly one path must be chosen ##### nel ppt diciamo che questo constraint lo abbiamo aggiunto noi, nel paper non c'era
 WCL.addConstr(gb.quicksum(y["EV",p] for p in range(len(paths))) == 1)
 
@@ -90,11 +90,11 @@ for a in link:
         WCL.addConstr(n[a,"ICV",t] == gb.quicksum(u[a,"ICV",k] - v[a,"ICV",k] for k in np.arange(t+1)))
         if a != link[0] and a!= link[-1]:
             # formula 13: upstream capacity
-            t_in = max(0, t - int(length[a-1]/vehicles.Va))
+            t_in = max(0, round(t - length[a-1]/vehicles.Va))
             WCL.addConstr(gb.quicksum(u[a,"EV",k] for k in np.arange(t_in,t+1)) <= n[a,"EV",t])
             WCL.addConstr(gb.quicksum(u[a,"ICV",k] for k in np.arange(t_in,t+1)) <= n[a,"ICV",t])
             # formula 14: downstream capacity
-            t_out = max(0, t - int(length[a-1]/vehicles.Wa))
+            t_out = max(0, round(t - length[a-1]/vehicles.Wa))
             WCL.addConstr(n[a,"EV",t] + gb.quicksum(v[a,"EV",k] for k in range(t_out,t+1)) <= vehicles.Ka * length[a-1] * alpha[link_source,"EV",t])
             WCL.addConstr(n[a,"ICV",t] + gb.quicksum(v[a,"ICV",k] for k in range(t_out,t+1)) <= vehicles.Ka * length[a-1] * alpha[link_source,"ICV",t])
             # formula 19: flow capacity of EV on links
@@ -123,12 +123,12 @@ for t in np.arange(0, T + timestep, timestep):
 # define supply and demand as variables with constraint to be smaller them
 S = WCL.addVars(link, np.arange(0, T + timestep, timestep), lb=0)
 D = WCL.addVars(link, np.arange(0, T + timestep, timestep), lb=0)
-for a in link:
+for a in link[1:-1]:
     for t in np.arange(0, T+timestep, timestep):
         ######### poi check se supply e demand sum sono uguali per EV e ICV e quindi basta calcolarle una volta
         # formula 20
         inflow_s = gb.quicksum(u[a,"EV",k] for k in np.arange(0,t))
-        outflow_s = gb.quicksum(v[a,"EV",k] for k in np.arange(0, t - int(length[a-1]/vehicles.Va)))
+        outflow_s = gb.quicksum(v[a,"EV",k] for k in np.arange(0, round(t - length[a-1]/vehicles.Va)))
         supply_sum = vehicles.Ka * length[a-1] + outflow_s - inflow_s
         WCL.addConstr(S[a,t] <= vehicles.Qa)
         WCL.addConstr(S[a,t] <= supply_sum)
@@ -137,7 +137,7 @@ for a in link:
         
         # Idem for ICV
         inflow_s = gb.quicksum(u[a,"ICV",k] for k in np.arange(0,t))
-        outflow_s = gb.quicksum(v[a,"ICV",k] for k in np.arange(0, t - int(length[a-1]/vehicles.Va)))
+        outflow_s = gb.quicksum(v[a,"ICV",k] for k in np.arange(0, round(t - length[a-1]/vehicles.Va)))
         supply_sum = vehicles.Ka * length[a-1] + outflow_s - inflow_s
         WCL.addConstr(S[a,t] <= vehicles.Qa)
         WCL.addConstr(S[a,t] <= supply_sum)
@@ -145,7 +145,7 @@ for a in link:
                              
         # formula 21
         inflow_d = gb.quicksum(v[a,"EV",k] for k in np.arange(0,t))
-        outflow_d = gb.quicksum(u[a,"EV",k] for k in np.arange(0, t - int(length[a-1]/vehicles.Wa)))
+        outflow_d = gb.quicksum(u[a,"EV",k] for k in np.arange(0, round(t - length[a-1]/vehicles.Wa)))
         demand_sum = outflow_d - inflow_d
         WCL.addConstr(D[a,t] <= vehicles.Qa)
         WCL.addConstr(D[a,t] <= demand_sum)
@@ -154,11 +154,11 @@ for a in link:
         
         # Idem for ICV
         inflow_d = gb.quicksum(v[a,"ICV",k] for k in np.arange(0,t))
-        outflow_d = gb.quicksum(u[a,"ICV",k] for k in np.arange(0, t - int(length[a-1]/vehicles.Wa)))
+        outflow_d = gb.quicksum(u[a,"ICV",k] for k in np.arange(0, round(t - length[a-1]/vehicles.Wa)))
         demand_sum = outflow_d - inflow_d
         WCL.addConstr(D[a,t] <= vehicles.Qa)
         WCL.addConstr(D[a,t] <= demand_sum)
         WCL.addConstr(u[a,"ICV",t] <= D[a,t])
 
-WCL.setObjective(gb.quicksum((len(np.arange(0, T+timestep, timestep)) + 1 - t) * f[b, link[-1], m, t] for m in M for t in np.arange(0, T+timestep, timestep) for b in link[1:]))
+WCL.setObjective(gb.quicksum((len(np.arange(0, T+timestep, timestep)) + 1 - t) * f[b, link[-1], m, t] for m in M for t in np.arange(0, T+timestep, timestep) for b in link[:-1]))
 WCL.optimize()
