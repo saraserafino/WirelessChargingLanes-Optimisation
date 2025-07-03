@@ -31,7 +31,7 @@ WCL.setParam('OutputFlag', 0) # for no prints
 
 M = ["EV", "ICV"] # class of vehicles: Electric or Internal Combustion
 
-x = WCL.addVars(link, vtype=gb.GRB.BINARY) # = 1 if link a has WCL
+x = WCL.addVars(link[1:-1], vtype=gb.GRB.BINARY) # = 1 if link a has WCL
 y = WCL.addVars(M, len(paths), vtype=gb.GRB.BINARY) # = 1 if path p is feasible for vehicle M
 B = WCL.addVars(link, len(paths), lb=0.0, ub=vehicles.Bmax) # state of energy, bounded between being positive and max capacity
 
