@@ -53,6 +53,7 @@ for p in range(len(paths)):
         b = paths[p][i-1]
         a = paths[p][i]
         # formula 5: state of energy after traversing link 𝑎 on path 𝑝
+        # length[a-1] instead of length[a] as in paper, because a starts from 1, but arrays do not
         # travel time of link a at velocity Va is t0[a]=length[a]/vehicles.Va
         WCL.addConstr(B[a,p] <= B[b,p] - vehicles.epsilon * length[a-1] + vehicles.omega * length[a-1]/vehicles.Va * x[a])
     for a in link[1:-1]:
