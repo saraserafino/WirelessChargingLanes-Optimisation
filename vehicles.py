@@ -1,25 +1,6 @@
-class EV: # Electric Vehicles
-    def __init__(self, scalability):
-        self.B0 = 0.35 # initial energy
-        self.energy = 0.35 # initial state of energy
-        if scalability is True: # For grid Network
-            self.Bmax = 1.0 # battery capacity
-        else: # For Braess networks
-            self.Bmax = 0.5
-        # Traffic parameters
-        self.Va = 900 # m/min, free-flow speed (speed without traffic)
-        self.Wa = 450 # m/min, backward speed (speed with traffic)
-        self.Ka = 0.12 # vehicles/min, jam density for each link 𝑎 (maximum density before traffic congested)
-        self.Qa = 36 # vehicles * m / min^2, maximum flow capacity
-        self.Ca = 0.04 # vehicles/min, critical density
-        self.Da = 36 # vehicles/min, demand rate
-
-        self.omega = 0.33 # amount of energy received when traversing oncharging link per time unit
-        self.epsilon = 0.00018 # electricity consumption rate
-    
-
-class ICV: # Internal Combustion Vehicles
-    def __init__(self, scalability):
+# Parent class
+class vehicle:
+    def __init__(self):
         # Traffic parameters
         self.Va = 900 # m/min, free-flow speed
         self.Wa = 450 # m/min, backward speed
@@ -27,3 +8,20 @@ class ICV: # Internal Combustion Vehicles
         self.Qa = 36 # vehicles * m / min^2, maximum flow capacity
         self.Ca = 0.04 # vehicles/min, critical density
         self.Da = 36 # vehicles/min, demand rate
+
+# Child classes inheriting from vehicle
+        
+class EV(vehicle): # Electric Vehicles
+    def __init__(self, scalability):
+        super().__init__() # calls parent's constructor
+
+        self.B0 = 0.35 # initial battery energy
+        # Battery capacity is 1 for grid networks and 0.5 for Braess networks
+        self.Bmax = 1.0 if scalability else 0.5
+
+        self.omega = 0.33 # kwh/min, amount of energy received when traversing oncharging link per time unit
+        self.epsilon = 0.00018 # kwh/m, electricity consumption rate
+   
+class ICV(vehicle): # Internal Combustion Vehicles
+    def __init__(self):
+        super().__init__() # calls parent's constructor
