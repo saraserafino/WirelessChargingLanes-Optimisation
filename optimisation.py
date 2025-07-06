@@ -45,7 +45,7 @@ def optimisation_model(link_length, paths, T, timestep, scalability, budget):
     WCL.addConstr(gb.quicksum(length[a] * x[a] for a in link[1:-1]) <= budget) # formula 3: budget
 
     # Add new variable for writing formula 5 (minimum between constant and expression)
-    G = WCL.addVars(link, len(paths), vtype=gb.GRB.BINARY)
+    G = WCL.addVars(link, len(paths), vtype=gb.GRB.BINARY) # = 1 if min is expression
     # State of energy after travelling on link a is no greater than the battery capacity
     for p in range(len(paths)):
         # formula 4: initial state of energy
@@ -61,12 +61,17 @@ def optimisation_model(link_length, paths, T, timestep, scalability, budget):
             # for having B[a,p] == min(Bmax, energy):
             WCL.addConstr(B[a,p] <= ev.Bmax)
             WCL.addConstr(B[a,p] <= energy)
-            WCL.addConstr(B[a,p] >= ev.Bmax - 1000 * G[a,p])
-            WCL.addConstr(B[a,p] >= energy - 1000 * (1-G[a,p]))
+            WCL.addConstr(B[a,p] >= ev.Bmax - 100 * G[a,p]) # B[a,p] = Bmax for G = 0
+            WCL.addConstr(B[a,p] >= energy - 100 * (1-G[a,p])) # B[a,p] = energy for G = 1
+            # B[a,p]=Bmax for G=0, in fact energy-Bmax positive => 0
+            # B[a,p]=energy for G=1, in fact energy-Bmax negative >= -100
+            # Therefore we add the following constraint on G
+            ## spiega in ppt
+            WCL.addConstr(energy - 0.5 >= -100 * G[a,p])
         for a in link[1:-1]:
             if a in paths[p]:
                 # formula 6: feasibility of path. M can be whatever because if y["EV",p]=1, then B[a,p]>=0, if =0 B[a,p]>=-something
-                WCL.addConstr(B[a,p] >= 10 * (y["EV",p] - 1))
+                WCL.addConstr(B[a,p] >= 100 * (y["EV",p] - 1))
     # Exactly one path must be chosen ##### nel ppt diciamo che questo constraint lo abbiamo aggiunto noi, nel paper non c'era
     #WCL.addConstr(gb.quicksum(y["EV",p] for p in range(len(paths))) == 1)
 
@@ -91,8 +96,8 @@ def optimisation_model(link_length, paths, T, timestep, scalability, budget):
     WCL.addConstr(gb.quicksum(alpha[link_source,"EV",t] for t in t_idx) * den_alpha == alpha_EV)
     WCL.addConstr(gb.quicksum(alpha[link_source,"ICV",t] for t in t_idx) * den_alpha == alpha_ICV)
 
-    for a in link:
-        for t in t_idx:
+    for t in t_idx:
+        for a in link:
             # Formula 12: conservation of vehicle numbers
             WCL.addConstr(n[a,"EV",t] == gb.quicksum(u[a,"EV",k] - v[a,"EV",k] for k in np.arange(t+1)))
             WCL.addConstr(n[a,"ICV",t] == gb.quicksum(u[a,"ICV",k] - v[a,"ICV",k] for k in np.arange(t+1)))
@@ -117,7 +122,6 @@ def optimisation_model(link_length, paths, T, timestep, scalability, budget):
                 WCL.addConstr(v[a,"EV",t] == gb.quicksum(f[a,b,"EV",t] for b in link[1:]))
                 WCL.addConstr(v[a,"ICV",t] == gb.quicksum(f[a,b,"ICV",t] for b in link[1:]))
 
-    for t in t_idx:
         # formula 15: source link constraint is the demand rate of vehicle M at time step t
         WCL.addConstr(u[link_source,"EV",t] == ev.Da)
         WCL.addConstr(u[link_source,"ICV",t] == icv.Da)
