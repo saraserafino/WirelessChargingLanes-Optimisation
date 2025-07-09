@@ -1,168 +1,182 @@
-from gurobipy import *
-import gurobipy as gb
+import gurobipy as gp
 import numpy as np
 import vehicles
+import networkx as nx # for generating paths from edges without going crazy
 
-def optimisation_model(link_length, paths, T, timestep, scalability, budget):
+def optimisation_model(length, graph, T, timestep, scalability, budget):
     # Extract info about the network
-    link = list(link_length.keys())
-    link_source = link[0] # initial link (it is unique)
-    link_sink = link [-1] # final link (it is unique)
-    length = list(link_length.values())
+    E = list(length.keys()) # links
+    N = int(T / timestep) # cardinality of time given timesteps
 
-    # np.arange(0, T + timestep, timestep) = [0, 0.25, 0.5, 0.75, 1.0, ..., 60] but only int can be array indices!
-    time_indices = {i: t for i, t in enumerate(np.arange(0, T + timestep, timestep))}
-    # time_to_index = {0: 0.0, 1: 0.25, 2: 0.5, 3: 0.75, 4: 1.0, ..., 240: 60.0}
-    # In arrays we'll just use its keys (i):
-    t_idx = list(time_indices.keys())
+    # Construct network topology
+
+    E_R = E[0] # source link (it is unique)
+    E_S = E[-1] # sink link (it is unique)
+    E_A = E[1:-1] # normal links i.e. no source and no sink
+    # Generate paths from the graph
+    paths = list(nx.all_simple_paths(graph, source=E_R, target=E_S))
+    # Remove source and sink link from paths because they are unique and have no length
+    paths = {i: path[1:-1] for i, path in enumerate(paths)}
+
+    # Generate incoming links and outgoing links relative to link a
+    incoming_links = {a: list(graph.predecessors(a)) for a in graph.nodes}
+    ## ex {1: [], 2: [1], 3: [1], 4: [2], 5: [2], 6: [3, 4], 7: [5, 6]}
+    outgoing_links = {a: list(graph.successors(a)) for a in graph.nodes}
+    ## ex {1: [2, 3], 2: [4, 5], 3: [6], 4: [6], 5: [7], 6: [7], 7: []}
+
+    # Kronecker's delta for EV paths
+    delta = {(a, p): int(a in paths[p]) for p in paths for a in E_A}
+    # Count the chosen paths (used later for ICV)
+    count_paths = {a: sum(delta[(a, p)] for p in paths) for a in E_A}
 
     # Create instances for EV and ICV
     ev = vehicles.EV(scalability)
     icv = vehicles.ICV()
     # Actually we do not need the icv instance since it has the same attributes of ev, but for the sake of coherence with inheritance we'll use it
 
-    # Define optimisation model
+    # Define optimisation model and its variables
 
-    WCL = gb.Model()
-    WCL.modelSense = gb.GRB.MAXIMIZE
-    WCL.setParam('OutputFlag', 0) # for no prints
+    model = gp.Model()
+    model.setParam('OutputFlag', 0) # for no prints
 
     M = ["EV", "ICV"] # class of vehicle: Electric or Internal Combustion
 
-    x = WCL.addVars(link, vtype=gb.GRB.BINARY) # = 1 if link a has WCL
-    y = WCL.addVars(M, len(paths), vtype=gb.GRB.BINARY) # = 1 if path p is feasible for vehicle M
-    B = WCL.addVars(link, len(paths), ub=ev.Bmax) # state of energy, bounded with its max capacity
+    x = model.addVars(E_A, vtype=gp.GRB.BINARY, name="x") # = 1 if link a has WCL
+    y = model.addVars(len(paths), vtype=gp.GRB.BINARY, name="y") # = 1 if path p is feasible for vehicle M
+    # y does is only for EV models since for ICV all paths are feasible
+    B = {(a, p): model.addVar(ub=ev.Bmax, name=f"B_{a}_{p}") for p in paths for a in paths[p]}  # state of energy, bounded with its max capacity
 
-    ## 3600 di n è la max lumghezza del path quindi poi sistema genericamente
-    n = WCL.addVars(link, M, t_idx, lb=0, ub=ev.Ka * 3600) # number of vehicle M on link 𝑎 at time t
-    u = WCL.addVars(link, M, t_idx, lb=0, ub=ev.Qa) # incoming traffic flow of vehicle M to link 𝑎 at time t
-    v = WCL.addVars(link, M, t_idx, lb=0, ub=ev.Qa) # outgoing traffic flow of vehicle M to link 𝑎 at time t
-    f = WCL.addVars(link, link, M, t_idx, lb=0, ub=ev.Qa) # upstream traffic of vehicle M at link b, coming from downstream traffic at link a
-    # These variables are already defined with the constraint of non-negativity (formula 24)
+    # The following variables are already defined with the constraint of non-negativity of formula 24
+    n = model.addVars(M, E, range(N+1), lb=0) # number of vehicle M on link 𝑎 at time t
+    u = model.addVars(M, E, range(N+1), lb=0) # incoming traffic flow of vehicle M to link 𝑎 at time t
+    v = model.addVars(M, E, range(N+1), lb=0) # outgoing traffic flow of vehicle M to link 𝑎 at time t
+    f = {}
+    for m in M:
+        for a in E:
+            for b in incoming_links[a]:
+                for i in range(N+1): # upstream traffic of vehicle M at link b, coming from downstream traffic at link a
+                    f[(m, b, a, i)] = model.addVar(lb=0.0)
+
+    # alpha aggregate link-based share factor of vehicle class 𝑚 of formula 14.
+    # Must be defined as a variable because it depends on u, otherwise it cannot be computed
+    ## spiega nel ppt!!!!!!
+    alpha = model.addVars(E_A, M, range(N+1), lb=0.0, ub=1.0, name="alpha")
+    for a in E_A:
+        for i in range(N+1):
+            model.addConstr(gp.quicksum(alpha[a, m, i] for m in M) == 1.0)
 
     # Feasibility of path
+                    
+    # Formula 3: budget constraint
+    model.addConstr(gp.quicksum(length[a] * x[a] for a in E_A) <= budget)
 
-    WCL.addConstr(gb.quicksum(length[a] * x[a] for a in link[1:-1]) <= budget) # formula 3: budget
-
-    # Add new variable for writing formula 5 (minimum between constant and expression)
-    G = WCL.addVars(link, len(paths), vtype=gb.GRB.BINARY) # = 1 if min is expression
     # State of energy after travelling on link a is no greater than the battery capacity
-    for p in range(len(paths)):
-        # formula 4: initial state of energy
-        a0 = paths[p][0]
-        WCL.addConstr(B[a0,p] == ev.B0)
-        for i in range(1,len(paths[p])-1):
-            b = paths[p][i-1]
-            a = paths[p][i]
-            # formula 5: state of energy after traversing link 𝑎 on path 𝑝
-            # length[a-1] instead of length[a] as in paper, because a starts from 1, but arrays do not
-            energy = B[b,p] - ev.epsilon * length[a-1] + ev.omega * length[a-1]/ev.Va * x[a]
-            # travel time of link a at velocity Va is t0[a]=length[a]/ev.Va
-            # for having B[a,p] == min(Bmax, energy):
-            WCL.addConstr(B[a,p] <= ev.Bmax)
-            WCL.addConstr(B[a,p] <= energy)
-            WCL.addConstr(B[a,p] >= ev.Bmax - 100 * G[a,p]) # B[a,p] = Bmax for G = 0
-            WCL.addConstr(B[a,p] >= energy - 100 * (1-G[a,p])) # B[a,p] = energy for G = 1
-            # B[a,p]=Bmax for G=0, in fact energy-Bmax positive => 0
-            # B[a,p]=energy for G=1, in fact energy-Bmax negative >= -100
-            # Therefore we add the following constraint on G
-            ## spiega in ppt
-            WCL.addConstr(energy - 0.5 >= -100 * G[a,p])
-        for a in link[1:-1]:
-            if a in paths[p]:
-                # formula 6: feasibility of path. M can be whatever because if y["EV",p]=1, then B[a,p]>=0, if =0 B[a,p]>=-something
-                WCL.addConstr(B[a,p] >= 100 * (y["EV",p] - 1))
-    # Exactly one path must be chosen ##### nel ppt diciamo che questo constraint lo abbiamo aggiunto noi, nel paper non c'era
-    #WCL.addConstr(gb.quicksum(y["EV",p] for p in range(len(paths))) == 1)
+    for p, link_list in paths.items():
+        for idx, a in enumerate(link_list):
+            # Formula 4: initial state of energy or previous one
+            prevB = ev.B0 if idx == 0 else B[(link_list[idx - 1], p)]
+            # Formula 2: state of energy after traversing link 𝑎 on path 𝑝
+            charge = ev.omega * length[a] / ev.Va
+            # where length[a]/ev.Va=t0[a] travel time of link a at velocity Va
+            consume = ev.epsilon * length[a]
+            # Formula 5: B[a,p] == min(Bmax, energy)
+            model.addConstr(B[(a, p)] <= ev.Bmax)
+            model.addConstr(B[(a, p)] <= prevB - consume + charge * x[a] + 1e3 * (1 - y[p]))
+            model.addConstr(B[(a, p)] >= prevB - consume + charge * x[a] - 1e3 * (1 - y[p]))
+            # Formula 6: feasibility of path (if feasible, B[a,p]>=0)
+            model.addConstr(B[(a, p)] >= 1e3 * (y[p]-1))
 
     # Flow capacity
+    
+    # Compute travel time for formula 13, 14, 20, 21
+    # /timestep so instead of time of travel we have the needed steps for travelling
+    travelV = {a: int((length[a]/ev.Va)/timestep + 1e-9) for a in length}
+    travelW = {a: int((length[a]/ev.Wa)/timestep + 1e-9) for a in length}
 
-    # Compute Kronecker's delta for formula 19
-    deltaKron = {}
-    for p in range(len(paths)):
-        for a in link:
-            deltaKron[p,a] = 1 if a in paths[p] else 0
+    for i in range(N+1):
+        for a in E:
+            for m in M:
+                # Formula 12: conservation of vehicle numbers ### dividi inflow outflow
+                inflow = gp.quicksum(u[m, a, k] for k in range(i+1))
+                outflow = gp.quicksum(v[m, a, k] for k in range(i+1))
+                model.addConstr(n[m, a, i] - inflow + outflow == 0)
+                if a != E_R and a!= E_S: # i.e. a in E_A
+                    if i >= travelV[a]: # formula 13: upstream capacity
+                        model.addConstr(gp.quicksum(u[m, a, k] for k in range(i - travelV[a] + 1, i+1)) - n[m, a, i] <= 0)
+                    if i >= travelW[a]:# Formula 14: downstream capacity 
+                        model.addConstr(n[m, a, i] + gp.quicksum(v[m, a, k] for k in range(i - travelW[a] + 1, i+1)) <= ev.Ka * length[a] * alpha[a, m, i], name=f"capacity_consistency_{m}_{a}_{i}")
+                    # Formula 19: flow capacity on links
+                    inflow = gp.quicksum(f[m, b, a, i] for b in incoming_links[a])
+                    if m == "EV":
+                        model.addConstr(inflow <= ev.Qa * gp.quicksum(delta[(a,p)] * y[p] for p in paths))
+                    else: # Also upstream traffic of ICV vehicles must be lower than capacity * the paths in which EVs are
+                        model.addConstr(inflow <= icv.Qa * count_paths[a])
+                if a != E_R: # i.e. no source link
+                    # Formula 16: flux conservation for incoming vehicle
+                    model.addConstr(u[m, a, i] - gp.quicksum(f[(m, b, a, i)] for b in incoming_links[a]) == 0)
+                if a != E_S: # i.e. no sink link
+                    # Formula 17: flux conservation for outgoing vehicle
+                    model.addConstr(v[m, a, i] - gp.quicksum(f[(m, a, b, i)] for b in outgoing_links[a]) == 0)
 
-    # alpha aggregate link-based share factor of vehicle class 𝑚 of formula 14, must be defined as a variable
-    # because it depends on u and otherwise it cannot be computed
-    ## spiega nel ppt
-    alpha = WCL.addVars([link_source], M, t_idx, lb=0.0, ub=1.0)
-
-    # Compute alpha of formula 14: aggregate link-based share factor of vehicle class 𝑚
-    WCL.addConstr(gb.quicksum(alpha[link_source,m,t] for m in M for t in t_idx) == 1)
-    alpha_EV = gb.quicksum(u[link_source,"EV",t] for t in t_idx)
-    alpha_ICV = gb.quicksum(u[link_source,"ICV",t] for t in t_idx)
-    den_alpha = alpha_EV + alpha_ICV
-    WCL.addConstr(gb.quicksum(alpha[link_source,"EV",t] for t in t_idx) * den_alpha == alpha_EV)
-    WCL.addConstr(gb.quicksum(alpha[link_source,"ICV",t] for t in t_idx) * den_alpha == alpha_ICV)
-
-    for t in t_idx:
-        for a in link:
-            # Formula 12: conservation of vehicle numbers
-            WCL.addConstr(n[a,"EV",t] == gb.quicksum(u[a,"EV",k] - v[a,"EV",k] for k in np.arange(t+1)))
-            WCL.addConstr(n[a,"ICV",t] == gb.quicksum(u[a,"ICV",k] - v[a,"ICV",k] for k in np.arange(t+1)))
-            if a != link[0] and a!= link[-1]:
-                # formula 13: upstream capacity
-                t_in = max(0, round(t - length[a-1]/ev.Va + 1))
-                WCL.addConstr(gb.quicksum(u[a,"EV",k] for k in range(t_in,t+1)) <= n[a,"EV",t])
-                WCL.addConstr(gb.quicksum(u[a,"ICV",k] for k in range(t_in,t+1)) <= n[a,"ICV",t])
-                # formula 14: downstream capacity
-                t_out = max(0, round(t - length[a-1]/ev.Wa + 1))
-                WCL.addConstr(n[a,"EV",t] + gb.quicksum(v[a,"EV",k] for k in range(t_out,t+1)) <= ev.Ka * length[a-1] * alpha[link_source,"EV",t])
-                WCL.addConstr(n[a,"ICV",t] + gb.quicksum(v[a,"ICV",k] for k in range(t_out,t+1)) <= icv.Ka * length[a-1] * alpha[link_source,"ICV",t])
-                # formula 19: flow capacity of EV on links
-                WCL.addConstr(gb.quicksum(f[b,a,"EV",t] for b in link[:-1]) <= ev.Qa * gb.quicksum(deltaKron[p,a] * y["EV",p] for p in range(len(paths))))
-                WCL.addConstr(gb.quicksum(f[b,a,"ICV",t] for b in link[:-1]) <= icv.Qa * gb.quicksum(deltaKron[p,a] * y["ICV",p] for p in range(len(paths))))
-            if a != link[0]: # no source link
-                # formula 16: flux conservation for incoming vehicle
-                WCL.addConstr(u[a,"EV",t] == gb.quicksum(f[b,a,"EV",t] for b in link[:-1]))
-                WCL.addConstr(u[a,"ICV",t] == gb.quicksum(f[b,a,"ICV",t] for b in link[:-1]))
-            if a != link[-1]: # no sink link
-                # formula 17: flux conservation for outgoing vehicle
-                WCL.addConstr(v[a,"EV",t] == gb.quicksum(f[a,b,"EV",t] for b in link[1:]))
-                WCL.addConstr(v[a,"ICV",t] == gb.quicksum(f[a,b,"ICV",t] for b in link[1:]))
-
-        # formula 15: source link constraint is the demand rate of vehicle M at time step t
-        WCL.addConstr(u[link_source,"EV",t] == ev.Da)
-        WCL.addConstr(u[link_source,"ICV",t] == icv.Da)
-        # formula 18: sink link constraint
-        WCL.addConstr(v[link_sink,"EV",t] == 0)
-        WCL.addConstr(v[link_sink,"ICV",t] == 0)
+        # Formula 15: source link constraint is the demand rate of vehicle
+        model.addConstr(u[("EV", E_R, i)] == ev.Da)
+        model.addConstr(u[("ICV", E_R, i)] == icv.Da)
+        # Formula 18: sink link constraint i.e. every vehicle has already exited
+        model.addConstr(v[("EV", E_S, i)] == 0)
+        model.addConstr(v[("ICV", E_S, i)] == 0)
 
     # Supply and demand at node
-    ## spiega nel ppt
-    # Since the minimum between an int and a linear expression of Gurobi cannot be done,
-    # define supply and demand as variables with constraint to be smaller them
-    S = WCL.addVars(link, t_idx, lb=0)
-    D = WCL.addVars(link, t_idx, lb=0)
-    for a in link[1:-1]:
-        for t in t_idx:
-            # formula 20
-            inflow_s = gb.quicksum(u[a,m,k] for k in range(0,t) for m in M)
-            outflow_s = gb.quicksum(v[a,m,k] for k in range(0, round(t - length[a-1]/ev.Va)) for m in M)
-            supply_sum = ev.Ka * length[a-1] + outflow_s - inflow_s
-            WCL.addConstr(S[a,t] <= ev.Qa)
-            WCL.addConstr(S[a,t] <= supply_sum)
-            # formula 22: 
-            WCL.addConstr(gb.quicksum(u[a,m,t] for m in M) <= S[a,t])
+    
+    for a in E_A:
+        for i in range(N+1):
+            # Formula 20 and 22: supply and corresponding entry flow of the link
+            inflow_s = gp.quicksum(u[m, a, k] for m in M for k in range(i))
+            outflow_s = gp.quicksum(v[m, a, k] for m in M for k in range(i - travelW[a] + 1)) if i > travelW[a] else 0
+            supply = ev.Ka * length[a] + outflow_s - inflow_s
+            model.addConstr(gp.quicksum(u[m, a, i] for m in M) <= ev.Qa)
+            model.addConstr(gp.quicksum(u[m, a, i] for m in M) <= supply)
                                 
-            # formula 21
-            inflow_d = gb.quicksum(v[a,m,k] for k in range(0,t) for m in M)
-            outflow_d = gb.quicksum(u[a,m,k] for k in range(0, round(t - length[a-1]/ev.Wa)) for m in M)
-            demand_sum = outflow_d - inflow_d
-            WCL.addConstr(D[a,t] <= ev.Qa)
-            WCL.addConstr(D[a,t] <= demand_sum)
-            # formula 23: 
-            WCL.addConstr(gb.quicksum(v[a,m,t] for m in M)  <= D[a,t])
+            # Formula 21 and 23: demand and corresponding exit flow of the link
+            inflow_d = gp.quicksum(v[m, a, k] for m in M for k in range(i))
+            outflow_d = gp.quicksum(u[m, a, k] for m in M for k in range(i - travelV[a] + 1)) if i > travelV[a] else 0
+            demand = outflow_d - inflow_d
+            model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= ev.Qa)
+            model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= demand)
 
-    WCL.setObjective(gb.quicksum((len(t_idx) + 1 - t) * f[b, link[-1], m, t] for m in M for t in t_idx for b in link[:-1]))
-    WCL.optimize()
+    # Set and optimize the objective function
+    model.setObjective(gp.quicksum((N - i + 1) *f[(m, b, E_S, i)] for m in M for b in incoming_links[E_S] for i in range(N+1)), gp.GRB.MAXIMIZE)
+    model.optimize()
 
-    if WCL.status == gb.GRB.OPTIMAL or WCL.status == gb.GRB.SUBOPTIMAL:
-        for a in link:
+    return model, x, y, B, n, u, v, f
+
+
+def print_optimal_solution(length, graph, model, x, y, B, n, u, v, f):
+    # Extract and compute info about the network
+    E = list(length.keys()) # links
+    E_R = E[0] # source link (it is unique)
+    E_S = E[-1] # sink link (it is unique)
+    E_A = E[1:-1] # normal links i.e. no source and no sink
+    paths = list(nx.all_simple_paths(graph, source=E_R, target=E_S))
+    # Remove source and sink link from paths because they are unique and have no length
+    paths = {i: path[1:-1] for i, path in enumerate(paths)}
+
+
+    # === Output: WCL installation and EV path choices ===
+    if model.status == gp.GRB.OPTIMAL or model.status == gp.GRB.SUBOPTIMAL:
+        print(f"🎯 Valore funzione obiettivo (outflow pesato): {model.ObjVal:.2f}")
+        for p in paths:
+            for a in paths[p]:
+                if B[(a,p)].x > 1e-4:
+                    print(f"energia B[({a},{p})]={B[(a,p)]}")
+        
+        print("🔌 Link selezionati per l'installazione delle WCL:")
+        for a in E_A:
             if x[a].x > 0.5:
-                print(f"Link {a} ha WCL installato.")
-    else:
-        print(f"⚠️ Il modello non è stato risolto correttamente. Status: {WCL.status}")
+                print(f"  - Link {a} (lunghezza: {length[a]} m)")
 
-    return WCL, x, B
+        print("🚗 Percorsi selezionati per EV:")
+        for p in paths:
+            if y[p].x > 0.5:
+                print(f"  - Path {p}: 1 -> " + " -> ".join(str(a) for a in paths[p]) + " -> 7")
+    else:
+        print(f"⚠️ Il modello non è stato risolto correttamente. Status: {model.status}")
