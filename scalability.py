@@ -1,4 +1,4 @@
-from optimisation import optimisation_model
+from optimisation import *
 import json
 import networkx as nx # for generating paths from edges without going crazy
 import matplotlib.pyplot as plt
@@ -25,10 +25,11 @@ edges42 = [tuple(edge) for edge in data["edges"]]
 # Generate paths from the edges
 G42 = nx.DiGraph()
 G42.add_edges_from(edges42)
-paths42 = list(nx.all_simple_paths(G42, source=1, target=42))
-
-#scalability_model42, x42, B42 = optimisation_model(link_length42, paths42, T, timestep, scalability, budget)
-
+#paths42 = list(nx.all_simple_paths(G42, source=1, target=42))
+#nx.draw(G42)
+#plt.savefig("paths42.png")
+scalability_model42, x42, y42, B42, n42, u42, v42, f42 = optimisation_model(link_length42, G42, T, timestep, scalability, budget)
+print_optimal_solution(link_length42, G42, scalability_model42, x42, y42, B42, n42, u42, v42, f42)
 
 
 # Import data of Grid-82
@@ -40,6 +41,7 @@ edges82 = [tuple(edge) for edge in data["edges"]]
 
 G82 = nx.DiGraph()
 G82.add_edges_from(edges82)
-paths82 = list(nx.all_simple_paths(G82, source=1, target=82))
+#paths82 = list(nx.all_simple_paths(G82, source=1, target=82))
 
-#scalability_model82, x82, B82 = optimisation_model(link_length82, paths82, T, timestep, scalability, budget)
+scalability_model82, x82, y82, B82, n82, u82, v82, f82 = optimisation_model(link_length82, G82, T, timestep, scalability, budget)
+print_optimal_solution(link_length82, G82, scalability_model82, x82, y82, B82, n82, u82, v82, f82)
