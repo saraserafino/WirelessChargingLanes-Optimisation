@@ -20,7 +20,7 @@ class EV(vehicle): # Electric Vehicles
         self.Bmax = 1.0 if scalability else 0.5
 
         self.omega = 0.33 # kwh/min, amount of energy received when traversing oncharging link per time unit
-        self.epsilon = 0.00018 # kwh/m, electricity consumption rate
+        self.epsilon = 1.8e-4 # kwh/m, electricity consumption rate
    
 class ICV(vehicle): # Internal Combustion Vehicles
     def __init__(self):
