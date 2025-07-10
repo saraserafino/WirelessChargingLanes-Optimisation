@@ -55,14 +55,14 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
         for a in E:
             for b in incoming_links[a]:
                 for i in range(N+1): # upstream traffic of vehicle M at link b, coming from downstream traffic at link a
-                    f[(m, b, a, i)] = model.addVar(lb=0.0)
+                    f[m, b, a, i] = model.addVar(lb=0.0)
 
     # alpha aggregate link-based share factor of vehicle class 𝑚 of formula 14.
     # Must be defined as a variable because it depends on u, otherwise it cannot be computed
     ## spiega nel ppt!!!!!!
-    alpha = model.addVars(E_A, M, range(N+1), lb=0.0, ub=1.0, name="alpha")
+    alpha = model.addVars(E_A, M, range(1, N+1), lb=0.0, ub=1.0, name="alpha")
     for a in E_A:
-        for i in range(N+1):
+        for i in range(1, N+1):
             model.addConstr(gp.quicksum(alpha[a, m, i] for m in M) == 1.0)
 
     # Feasibility of path
@@ -71,6 +71,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     model.addConstr(gp.quicksum(length[a] * x[a] for a in E_A) <= budget)
 
     # State of energy after travelling on link a is no greater than the battery capacity
+    Big_M = ev.Bmax + ev.omega * (3600 / ev.Va) # 3600 is the maximum length for every link observed
     for p, link_list in paths.items():
         for idx, a in enumerate(link_list):
             # Formula 4: initial state of energy or previous one
@@ -81,10 +82,10 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             consume = ev.epsilon * length[a]
             # Formula 5: B[a,p] == min(Bmax, energy)
             model.addConstr(B[(a, p)] <= ev.Bmax)
-            model.addConstr(B[(a, p)] <= prevB - consume + charge * x[a] + 1e3 * (1 - y[p]))
-            model.addConstr(B[(a, p)] >= prevB - consume + charge * x[a] - 1e3 * (1 - y[p]))
+            model.addConstr(B[(a, p)] <= prevB - consume + charge * x[a] + Big_M * (1 - y[p]))
+            model.addConstr(B[(a, p)] >= prevB - consume + charge * x[a] - Big_M * (1 - y[p]))
             # Formula 6: feasibility of path (if feasible, B[a,p]>=0)
-            model.addConstr(B[(a, p)] >= 1e3 * (y[p]-1))
+            model.addConstr(B[(a, p)] >= Big_M * (y[p]-1))
 
     # Flow capacity
     
@@ -94,17 +95,17 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     travelW = {a: int((length[a]/ev.Wa)/timestep + 1e-9) for a in length}
 
     for i in range(N+1):
-        for a in E:
-            for m in M:
-                # Formula 12: conservation of vehicle numbers ### dividi inflow outflow
-                inflow = gp.quicksum(u[m, a, k] for k in range(i+1))
-                outflow = gp.quicksum(v[m, a, k] for k in range(i+1))
-                model.addConstr(n[m, a, i] - inflow + outflow == 0)
-                if a != E_R and a!= E_S: # i.e. a in E_A
+        for m in M:
+            for a in E:
+                # Formula 12: conservation of vehicle numbers
+                ##inflow = gp.quicksum(u[m, a, k] for k in range(i+1)) ## li ho uniti sotto
+                ##outflow = gp.quicksum(v[m, a, k] for k in range(i+1))
+                model.addConstr(n[m, a, i] - gp.quicksum(u[m, a, k] - v[m, a, k] for k in range(i+1)) == 0)
+                if a in E_A: # i.e. no source or sink link
                     if i >= travelV[a]: # formula 13: upstream capacity
                         model.addConstr(gp.quicksum(u[m, a, k] for k in range(i - travelV[a] + 1, i+1)) - n[m, a, i] <= 0)
-                    if i >= travelW[a]:# Formula 14: downstream capacity 
-                        model.addConstr(n[m, a, i] + gp.quicksum(v[m, a, k] for k in range(i - travelW[a] + 1, i+1)) <= ev.Ka * length[a] * alpha[a, m, i], name=f"capacity_consistency_{m}_{a}_{i}")
+                    if i >= travelW[a]: # Formula 14: downstream capacity 
+                        model.addConstr(n[m, a, i] + gp.quicksum(v[m, a, k] for k in range(i - travelW[a] + 1, i+1)) <= ev.Ka * length[a] * alpha[a, m, i])
                     # Formula 19: flow capacity on links
                     inflow = gp.quicksum(f[m, b, a, i] for b in incoming_links[a])
                     if m == "EV":
@@ -113,17 +114,17 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
                         model.addConstr(inflow <= icv.Qa * count_paths[a])
                 if a != E_R: # i.e. no source link
                     # Formula 16: flux conservation for incoming vehicle
-                    model.addConstr(u[m, a, i] - gp.quicksum(f[(m, b, a, i)] for b in incoming_links[a]) == 0)
+                    model.addConstr(u[m, a, i] - gp.quicksum(f[m, b, a, i] for b in incoming_links[a]) == 0)
                 if a != E_S: # i.e. no sink link
                     # Formula 17: flux conservation for outgoing vehicle
-                    model.addConstr(v[m, a, i] - gp.quicksum(f[(m, a, b, i)] for b in outgoing_links[a]) == 0)
+                    model.addConstr(v[m, a, i] - gp.quicksum(f[m, a, b, i] for b in outgoing_links[a]) == 0)
 
         # Formula 15: source link constraint is the demand rate of vehicle
-        model.addConstr(u[("EV", E_R, i)] == ev.Da)
-        model.addConstr(u[("ICV", E_R, i)] == icv.Da)
+        model.addConstr(u["EV", E_R, i] == ev.Da)
+        model.addConstr(u["ICV", E_R, i] == icv.Da)
         # Formula 18: sink link constraint i.e. every vehicle has already exited
-        model.addConstr(v[("EV", E_S, i)] == 0)
-        model.addConstr(v[("ICV", E_S, i)] == 0)
+        model.addConstr(v["EV", E_S, i] == 0)
+        model.addConstr(v["ICV", E_S, i] == 0)
 
     # Supply and demand at node
     
@@ -144,7 +145,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= demand)
 
     # Set and optimize the objective function
-    model.setObjective(gp.quicksum((N - i + 1) *f[(m, b, E_S, i)] for m in M for b in incoming_links[E_S] for i in range(N+1)), gp.GRB.MAXIMIZE)
+    model.setObjective(gp.quicksum((N - i + 1) * f[m, b, E_S, i] for m in M for b in incoming_links[E_S] for i in range(1, N+1)), gp.GRB.MAXIMIZE)
     model.optimize()
 
     return model, x, y, B, n, u, v, f
