@@ -4,10 +4,10 @@ class vehicle:
         # Traffic parameters
         self.Va = 900 # m/min, free-flow speed
         self.Wa = 450 # m/min, backward speed
-        self.Ka = 0.12 # vehicles/min, jam density for each link 𝑎
+        self.Ka = 0.12 # vehicles/m, jam density for each link 𝑎
         self.Qa = self.Ka * self.Wa * self.Va / (self.Va + self.Wa) # = 36 vehicles * m / min^2, maximum flow capacity
         self.Ca = self.Ka * self.Wa / (self.Va + self.Wa) # = 0.04 vehicles/min, critical density
-        self.Da = 36 # vehicles/min, demand rate
+        self.Da = 36 # vehicles/timestep, demand rate
 
 # Child classes inheriting from vehicle
         
