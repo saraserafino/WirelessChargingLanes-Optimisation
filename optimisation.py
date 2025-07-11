@@ -85,7 +85,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             model.addConstr(B[(a, p)] <= prevB - consume + charge * x[a] + Big_M * (1 - y[p]))
             model.addConstr(B[(a, p)] >= prevB - consume + charge * x[a] - Big_M * (1 - y[p]))
             # Formula 6: feasibility of path (if feasible, B[a,p]>=0)
-            model.addConstr(B[(a, p)] >= Big_M * (y[p]-1))
+            model.addConstr(Big_M * (y[p]-1) <= B[(a, p)])
 
     # Flow capacity
     
