@@ -22,11 +22,7 @@ print_optimal_solution(link_length, graph, test_model, x, y, B, n, u, v, f)
 # Inflow-outflow profiles of each vehicle class as in figure 3 of paper
 N = int(T / timestep)
 x_time = [i * timestep for i in range(N+1)]
-# Generate incoming links and outgoing links relative to link a
-incoming_links = {a: list(graph.predecessors(a)) for a in graph.nodes}
-# i.e. {1: [], 2: [1], 3: [1], 4: [2], 5: [2], 6: [3, 4], 7: [5, 6]}
-outgoing_links = {a: list(graph.successors(a)) for a in graph.nodes}
-# i.e. {1: [2, 3], 2: [4, 5], 3: [6], 4: [6], 5: [7], 6: [7], 7: []}
+
 def cumulative_series(values):
     return np.cumsum(values)
 
@@ -36,10 +32,10 @@ axes = axes.flatten()
 for idx, a in enumerate(list(link_length.keys())[:-1]):
     ax = axes[idx]
 
-    EV_inflow = [sum(f[("EV", b, a, i)].X for b in incoming_links[a]) for i in range(N+1)]
-    EV_outflow = [sum(f[("EV", a, b, i)].X for b in outgoing_links[a]) for i in range(N+1)]
-    ICV_inflow = [sum(f[("ICV", b, a, i)].X for b in incoming_links[a]) for i in range(N+1)]
-    ICV_outflow = [sum(f[("ICV", a, b, i)].X for b in outgoing_links[a]) for i in range(N+1)]
+    EV_inflow = [u[("EV", a, i)].X for i in range(N+1)]
+    EV_outflow = [v[("EV", a, i)].X for i in range(N+1)]
+    ICV_inflow = [u[("ICV", a, i)].X for i in range(N+1)]
+    ICV_outflow = [v[("ICV", a, i)].X for i in range(N+1)]
 
     ax.plot(x_time, cumulative_series(EV_inflow), label="EV inflow", linestyle='dashdot', color='blue')
     ax.plot(x_time, cumulative_series(EV_outflow), label="EV outflow", linestyle='dotted', color='green')
