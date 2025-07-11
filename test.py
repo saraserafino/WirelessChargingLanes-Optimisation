@@ -18,3 +18,45 @@ graph.add_edges_from(edges)
 
 test_model, x, y, B, n, u, v, f = optimisation_model(link_length, graph, T, timestep, scalability, budget)
 print_optimal_solution(link_length, graph, test_model, x, y, B, n, u, v, f)
+
+# Inflow-outflow profiles of each vehicle class as in figure 3 of paper
+N = int(T / timestep)
+x_time = [i * timestep for i in range(N+1)]
+# Generate incoming links and outgoing links relative to link a
+incoming_links = {a: list(graph.predecessors(a)) for a in graph.nodes}
+# i.e. {1: [], 2: [1], 3: [1], 4: [2], 5: [2], 6: [3, 4], 7: [5, 6]}
+outgoing_links = {a: list(graph.successors(a)) for a in graph.nodes}
+# i.e. {1: [2, 3], 2: [4, 5], 3: [6], 4: [6], 5: [7], 6: [7], 7: []}
+def cumulative_series(values):
+    return np.cumsum(values)
+
+fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
+axes = axes.flatten()
+
+for idx, a in enumerate(list(link_length.keys())[:-1]):
+    ax = axes[idx]
+
+    EV_inflow = [sum(f[("EV", b, a, i)].X for b in incoming_links[a]) for i in range(N+1)]
+    EV_outflow = [sum(f[("EV", a, b, i)].X for b in outgoing_links[a]) for i in range(N+1)]
+    ICV_inflow = [sum(f[("ICV", b, a, i)].X for b in incoming_links[a]) for i in range(N+1)]
+    ICV_outflow = [sum(f[("ICV", a, b, i)].X for b in outgoing_links[a]) for i in range(N+1)]
+
+    ax.plot(x_time, cumulative_series(EV_inflow), label="EV inflow", linestyle='dashdot', color='blue')
+    ax.plot(x_time, cumulative_series(EV_outflow), label="EV outflow", linestyle='dotted', color='green')
+    ax.plot(x_time, cumulative_series(ICV_inflow), label="ICV inflow", linestyle='dashdot', color='red')
+    ax.plot(x_time, cumulative_series(ICV_outflow), label="ICV outflow", linestyle='solid', color='orange')
+
+    ax.set_title(f"Link {a}")
+    ax.set_xlabel("Time (min)")
+    ax.set_ylabel("Flow accumulation (vehicles)")
+    ax.grid(True)
+
+## Nasconde i plot extra se E_A ha meno di 6 link
+#for j in range(len(list(link_length.keys())), len(axes)):
+#    fig.delaxes(axes[j])
+
+# Common legend
+handles, labels = ax.get_legend_handles_labels()
+fig.legend(handles, labels, ncol=2, loc='upper left')
+fig.tight_layout(rect=[0, 0, 1, 0.95])
+plt.savefig("Inflow-outflow profiles of Braess network")
