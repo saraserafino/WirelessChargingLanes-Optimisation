@@ -193,4 +193,4 @@ def print_optimal_solution(length, graph, model, x, y, B, n, u, v, f):
             if y[p].X > 0.5:
                 print(f"  - Path {p}: 1 -> " + " -> ".join(str(a) for a in paths[p]) + " -> 7")
     else:
-        print(f"Model did not solve to optimality. Status: {model.status}")
+        print(f"Model did not solve to optimality. Status: {model.status}")a
