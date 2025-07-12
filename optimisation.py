@@ -45,11 +45,11 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     n = model.addVars(M, E, range(N+1), lb=0) # number of vehicle M on link 𝑎 at time t
     u = model.addVars(M, E, range(N+1), lb=0) # incoming traffic flow of vehicle M to link 𝑎 at time t
     v = model.addVars(M, E, range(N+1), lb=0) # outgoing traffic flow of vehicle M to link 𝑎 at time t
-    f = {}
+    f = {} # upstream traffic of vehicle M at link b, coming from downstream traffic at link a
     for m in M:
         for a in E:
             for b in incoming_links[a]:
-                for i in range(N+1): # upstream traffic of vehicle M at link b, coming from downstream traffic at link a
+                for i in range(N+1):
                     f[m, b, a, i] = model.addVar(lb=0.0, name=f"f[{m},{b},{a},{i}]")
 
     # alpha aggregate link-based share factor of vehicle class 𝑚 of formula 14.
@@ -107,13 +107,13 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
                     inflow = gp.quicksum(f[m, b, a, i] for b in incoming_links[a])
                     if m == "EV":
                         model.addConstr(inflow <= ev.Qa * timestep * gp.quicksum(delta[(a,p)] * y[p] for p in paths))
-                    else: # Also upstream traffic of ICV vehicles must be lower than capacity
-                        model.addConstr(inflow <= icv.Qa * timestep)
+                    else: # Also for upstream traffic of ICV vehicles, where here all paths are feasible
+                        model.addConstr(inflow <= icv.Qa * gp.quicksum(delta[(a,p)] for p in paths), name="19ICV")
                 if a != E_R: # i.e. no source link
-                    # Formula 16: flux conservation for incoming vehicle
+                    # Formula 16: flux conservation for incoming vehicles
                     model.addConstr(u[m, a, i] - gp.quicksum(f[m, b, a, i] for b in incoming_links[a]) == 0)
                 if a != E_S: # i.e. no sink link
-                    # Formula 17: flux conservation for outgoing vehicle
+                    # Formula 17: flux conservation for outgoing vehicles
                     model.addConstr(v[m, a, i] - gp.quicksum(f[m, a, b, i] for b in outgoing_links[a]) == 0)
 
         # Formula 15: source link constraint is the demand rate of vehicle
@@ -146,25 +146,20 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     # Over alpha for controlling which links are used depending on y and the maximum flow for each link
     for i in range(1, N+1):
         for a in E_A:
-            # For alpha[m] = 0 EV flows cannot enter; for alpha=1 they can reach the maximum capacity Qa
-            model.addConstr(gp.quicksum(f['EV', b, a, i] for b in incoming_links[a]) <= ev.Qa * timestep * alpha[a, 'EV', i],name=f"alpha1")
-            model.addConstr(gp.quicksum(f['ICV', b, a, i] for b in incoming_links[a]) <= ev.Qa * timestep * alpha[a, 'ICV', i],name=f"alpha2")
             # If no feasible path goes in a, then alpha[EV] = 0, thus also EV flows = 0
             model.addConstr(alpha[a, 'EV', i] <= gp.quicksum(delta[(a, p)] * y[p] for p in paths),name=f"alpha3")
-            # If no path is active for link a, then alpha[EV] = 0 (tighter bound than previous one)
-            model.addConstr(alpha[a, "EV", i] <= gp.quicksum(y[p] for p in paths if delta[(a,p)]==1),name="alpha4")
 
     # If a path is not feasible, no EV flow can be on its links
     for p in paths:
         for idx, a in enumerate(paths[p]):
             for i in range(N+1):
                 for b in incoming_links[a]:
-                    model.addConstr(f['EV', b, a, i] <= ev.Qa * timestep * y[p],name=f"const")
+                    model.addConstr(f['EV', b, a, i] <= ev.Qa * timestep * y[p], name=f"flowcap")
 
 
     # Set and optimize the objective function
     #model.setObjective(gp.quicksum((N - i + 1) * f[m, b, E_S, i] for m in M for b in incoming_links[E_S] for i in range(1, N+1)), gp.GRB.MAXIMIZE)
-    model.setObjective(gp.quicksum((T - (i - 1)*timestep) *f[(m, b, E_S, i)] for m in M for b in incoming_links[E_S] for i in range(1, N+1)), gp.GRB.MAXIMIZE)
+    model.setObjective(gp.quicksum((N - i + 1) *f[(m, b, E_S, i)] for m in M for b in incoming_links[E_S] for i in range(1, N+1)), gp.GRB.MAXIMIZE)
     model.optimize()
 
     return model, x, y, B, n, u, v, f
@@ -181,22 +176,21 @@ def print_optimal_solution(length, graph, model, x, y, B, n, u, v, f):
     paths = {i: path[1:-1] for i, path in enumerate(paths)}
 
 
-    # === Output: WCL installation and EV path choices ===
+    # Output: WCL installation and EV path choices
     if model.status == gp.GRB.OPTIMAL or model.status == gp.GRB.SUBOPTIMAL:
-        print(f"🎯 Valore funzione obiettivo (outflow pesato): {model.ObjVal:.2f}")
+        print(f"Objective value: {model.ObjVal:.2f}\n")
         for p in paths:
             for a in paths[p]:
                 if B[(a,p)].x > 1e-4:
-                    print(f"energia B[({a},{p})]={B[(a,p)]}")
+                    print(f"energy B[({a},{p})]={B[(a,p)]}")
         
-        print("🔌 Link selezionati per l'installazione delle WCL:")
         for a in E_A:
-            if x[a].x > 0.5:
-                print(f"  - Link {a} (lunghezza: {length[a]} m)")
+            if x[a].X > 0.5:
+                print(f"WCL installed on arc {a} (length = {length[a]})")
 
-        print("🚗 Percorsi selezionati per EV:")
+        print("\nFeasible EV Paths:")
         for p in paths:
-            if y[p].x > 0.5:
+            if y[p].X > 0.5:
                 print(f"  - Path {p}: 1 -> " + " -> ".join(str(a) for a in paths[p]) + " -> 7")
     else:
-        print(f"⚠️ Il modello non è stato risolto correttamente. Status: {model.status}")
+        print(f"Model did not solve to optimality. Status: {model.status}")

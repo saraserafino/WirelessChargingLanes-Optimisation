@@ -10,21 +10,19 @@ edges = [(1, 2), (1, 3), (2, 4), (2, 5), (3, 6), (4, 6), (5, 7), (6, 7)]
 T = 60 # maximum time (in minutes)
 timestep = 0.25 # time steps (in minutes)
 scalability = False
-budget = 2800
+# Budget/cost per length of path
+I_budget = 1e6/500
 
 # Generate paths from the edges
 graph = nx.DiGraph()
 graph.add_edges_from(edges)
 
-test_model, x, y, B, n, u, v, f = optimisation_model(link_length, graph, T, timestep, scalability, budget)
+test_model, x, y, B, n, u, v, f = optimisation_model(link_length, graph, T, timestep, scalability, I_budget)
 print_optimal_solution(link_length, graph, test_model, x, y, B, n, u, v, f)
 
 # Inflow-outflow profiles of each vehicle class as in figure 3 of paper
 N = int(T / timestep)
 x_time = [i * timestep for i in range(N+1)]
-
-def cumulative_series(values):
-    return np.cumsum(values)
 
 fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(20, 10), sharex=True, sharey=True)
 axes = axes.flatten()
@@ -37,10 +35,10 @@ for idx, a in enumerate(list(link_length.keys())[:-1]):
     ICV_inflow = [u[("ICV", a, i)].X for i in range(N+1)]
     ICV_outflow = [v[("ICV", a, i)].X for i in range(N+1)]
 
-    ax.plot(x_time, cumulative_series(EV_inflow), label="EV inflow", linestyle='dashdot', color='blue')
-    ax.plot(x_time, cumulative_series(EV_outflow), label="EV outflow", linestyle='dotted', color='green')
-    ax.plot(x_time, cumulative_series(ICV_inflow), label="ICV inflow", linestyle='dashdot', color='red')
-    ax.plot(x_time, cumulative_series(ICV_outflow), label="ICV outflow", linestyle='solid', color='orange')
+    ax.plot(x_time, np.cumsum(EV_inflow), label="EV inflow", linestyle=(0,(3,5,1,5)), color='blue')
+    ax.plot(x_time, np.cumsum(EV_outflow), label="EV outflow", linestyle='dotted', color='green')
+    ax.plot(x_time, np.cumsum(ICV_inflow), label="ICV inflow", linestyle='dashdot', color='red')
+    ax.plot(x_time, np.cumsum(ICV_outflow), label="ICV outflow", linestyle='solid', color='orange')
 
     ax.set_title(f"Link {a}")
     ax.set_xlabel("Time (min)")
