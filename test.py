@@ -17,7 +17,7 @@ I_budget = 1e6/500
 graph = nx.DiGraph()
 graph.add_edges_from(edges)
 
-test_model, x, y, B, n, u, v, f = optimisation_model(link_length, graph, T, timestep, scalability, I_budget)
+test_model, x, y, B, n, u, v, f, t_exec = optimisation_model(link_length, graph, T, timestep, scalability, I_budget)
 print_optimal_solution(link_length, graph, test_model, x, y, B, n, u, v, f)
 
 # Inflow-outflow profiles of each vehicle class as in figure 3 of paper

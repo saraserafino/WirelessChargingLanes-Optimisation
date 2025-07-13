@@ -2,7 +2,19 @@ import gurobipy as gp
 import numpy as np
 import vehicles
 import networkx as nx # for generating paths from edges without going crazy
+import time # for the wrapper execution_time
 
+# Decorator for computing the execution time
+def execution_time(func):
+    def wrapper(*args):
+        start = time.time()
+        model, x, y, B, n, u, v, f = func(*args)
+        t_exec = time.time() - start
+        print(f"Optimal solution found in {t_exec:.3f} s")
+        return model, x, y, B, n, u, v, f, t_exec
+    return wrapper
+
+@execution_time
 def optimisation_model(length, graph, T, timestep, scalability, budget):
     # Extract info about the network
     E = list(length.keys()) # links
@@ -72,13 +84,13 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             # Formula 4: initial state of energy or previous one
             prevB = ev.B0 if idx == 0 else B[(link_list[idx - 1], p)]
             # Formula 2: state of energy after traversing link 𝑎 on path 𝑝
-            charge = ev.omega * length[a] / ev.Va
+            recharge = ev.omega * length[a] / ev.Va
             # where length[a]/ev.Va=t0[a] travel time of link a at velocity Va
             consume = ev.epsilon * length[a]
             # Formula 5: B[a,p] == min(Bmax, energy)
             model.addConstr(B[(a, p)] <= ev.Bmax)
-            model.addConstr(B[(a, p)] <= prevB - consume + charge * x[a] + Big_M * (1 - y[p]))
-            model.addConstr(B[(a, p)] >= prevB - consume + charge * x[a] - Big_M * (1 - y[p]))
+            model.addConstr(B[(a, p)] <= prevB - consume + recharge * x[a] + Big_M * (1 - y[p]))
+            model.addConstr(B[(a, p)] >= prevB - consume + recharge * x[a] - Big_M * (1 - y[p]))
             # Formula 6: feasibility of path (if feasible, B[a,p]>=0)
             model.addConstr(Big_M * (y[p]-1) <= B[(a, p)])
 
@@ -193,4 +205,4 @@ def print_optimal_solution(length, graph, model, x, y, B, n, u, v, f):
             if y[p].X > 0.5:
                 print(f"  - Path {p}: 1 -> " + " -> ".join(str(a) for a in paths[p]) + " -> 7")
     else:
-        print(f"Model did not solve to optimality. Status: {model.status}")a
+        print(f"Model did not solve to optimality. Status: {model.status}")
