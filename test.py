@@ -18,7 +18,7 @@ graph = nx.DiGraph()
 graph.add_edges_from(edges)
 
 test_model, x, y, B, n, u, v, f, t_exec = optimisation_model(link_length, graph, T, timestep, scalability, I_budget)
-print_optimal_solution(link_length, graph, test_model, x, y, B, n, u, v, f)
+print_optimal_solution(link_length, graph, test_model, x, y)
 
 # Inflow-outflow profiles of each vehicle class as in figure 3 of paper
 N = int(T / timestep)
@@ -44,10 +44,6 @@ for idx, a in enumerate(list(link_length.keys())[:-1]):
     ax.set_xlabel("Time (min)")
     ax.set_ylabel("Flow accumulation (vehicles)")
     ax.grid(True)
-
-## Nasconde i plot extra se E_A ha meno di 6 link
-#for j in range(len(list(link_length.keys())), len(axes)):
-#    fig.delaxes(axes[j])
 
 # Common legend
 handles, labels = ax.get_legend_handles_labels()

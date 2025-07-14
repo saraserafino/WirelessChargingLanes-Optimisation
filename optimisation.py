@@ -93,7 +93,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     # Kronecker's delta for EV paths
     delta = {(a, p): int(a in paths[p]) for p in paths for a in E_A}
     # At Tstop vehicles must not enter anymore, otherwise network cannot be cleared at time N (for formula 15)
-    Tstop = N/(2*ev.Da/ev.Qa/timestep + 1)
+    Tstop = N/((ev.Da+icv.Da)/(ev.Qa*timestep) + 1)
 
     for i in range(N+1):
         for m in M:
@@ -125,6 +125,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
         else: # then vehicles cannot enter anymore
             model.addConstr(u["EV", E_R, i] == 0)
             model.addConstr(u["ICV", E_R, i] == 0)
+
         # Formula 18: sink link constraint i.e. every vehicle has already exited
         model.addConstr(v["EV", E_S, i] == 0)
         model.addConstr(v["ICV", E_S, i] == 0)
@@ -147,6 +148,12 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= ev.Qa * timestep)
             model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= demand)
 
+    # Extra constraint
+            ##spiega nel ppt
+    epsilon_flow = 1e-3
+    for p, link_list in paths.items():
+        model.addConstr(gp.quicksum(f["EV", b, a, i] for i in range(N+1) for a in link_list for b in incoming_links[a]) >= epsilon_flow * y[p])
+
     # Set and optimize the objective function
             
     # Formula 1 with penalty coefficient 'o' (numerical value not explicitly specified)
@@ -158,14 +165,12 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     second_term = gp.quicksum(penalty_coefficient * (N + 1 - i) * f[m, b, a, i] for m in M for a in E[:-1] for b in incoming_links[a] for i in range(N+1))
     
     model.setObjective(first_term + second_term, gp.GRB.MAXIMIZE)
-    #model.setObjective(gp.quicksum((N - i + 1) * f[m, b, E_S, i] for m in M for b in incoming_links[E_S] for i in range(1, N+1)), gp.GRB.MAXIMIZE)
-    model.setObjective(gp.quicksum((N - i + 1) *f[(m, b, E_S, i)] for m in M for b in incoming_links[E_S] for i in range(1, N+1)), gp.GRB.MAXIMIZE)
     model.optimize()
 
     return model, x, y, B, n, u, v, f
 
 
-def print_optimal_solution(length, graph, model, x, y, B, n, u, v, f):
+def print_optimal_solution(length, graph, model, x, y):
     # Extract and compute info about the network
     E = list(length.keys()) # links
     E_R = E[0] # source link (it is unique)
@@ -179,10 +184,6 @@ def print_optimal_solution(length, graph, model, x, y, B, n, u, v, f):
     # Output: WCL installation and EV path choices
     if model.status == gp.GRB.OPTIMAL or model.status == gp.GRB.SUBOPTIMAL:
         print(f"Objective value: {model.ObjVal:.2f}\n")
-        for p in paths:
-            for a in paths[p]:
-                if B[(a,p)].x > 1e-4:
-                    print(f"energy B[({a},{p})]={B[(a,p)]}")
         
         for a in E_A:
             if x[a].X > 0.5:
@@ -191,6 +192,6 @@ def print_optimal_solution(length, graph, model, x, y, B, n, u, v, f):
         print("\nFeasible EV Paths:")
         for p in paths:
             if y[p].X > 0.5:
-                print(f"  - Path {p}: 1 -> " + " -> ".join(str(a) for a in paths[p]) + " -> 7")
+                print(f"  - Path {p}: 1 -> " + " -> ".join(str(a) for a in paths[p]) + f" -> {E_S}")
     else:
         print(f"Model did not solve to optimality. Status: {model.status}")
