@@ -12,7 +12,8 @@ import matplotlib.pyplot as plt
 T = 30 # maximum time (in minutes)
 timestep = 0.5 # time steps (in minutes)
 scalability = True
-budget = 2700000
+# Budget/cost per length of path
+I_budget = 1e6/500
 
 # Import data of Grid-42
 with open("data/grid42.json", "r") as f:
@@ -28,7 +29,7 @@ G42.add_edges_from(edges42)
 #paths42 = list(nx.all_simple_paths(G42, source=1, target=42))
 #nx.draw(G42)
 #plt.savefig("paths42.png")
-scalability_model42, x42, y42, B42, n42, u42, v42, f42, t_exec42 = optimisation_model(link_length42, G42, T, timestep, scalability, budget)
+scalability_model42, x42, y42, B42, n42, u42, v42, f42, t_exec42 = optimisation_model(link_length42, G42, T, timestep, scalability, I_budget)
 print_optimal_solution(link_length42, G42, scalability_model42, x42, y42, B42, n42, u42, v42, f42)
 
 
@@ -43,5 +44,5 @@ G82 = nx.DiGraph()
 G82.add_edges_from(edges82)
 #paths82 = list(nx.all_simple_paths(G82, source=1, target=82))
 
-scalability_model82, x82, y82, B82, n82, u82, v82, f82, t_exec82 = optimisation_model(link_length82, G82, T, timestep, scalability, budget)
+scalability_model82, x82, y82, B82, n82, u82, v82, f82, t_exec82 = optimisation_model(link_length82, G82, T, timestep, scalability, I_budget)
 print_optimal_solution(link_length82, G82, scalability_model82, x82, y82, B82, n82, u82, v82, f82)

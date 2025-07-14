@@ -32,9 +32,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
 
     # Generate incoming links and outgoing links relative to link a
     incoming_links = {a: list(graph.predecessors(a)) for a in graph.nodes}
-    ## ex {1: [], 2: [1], 3: [1], 4: [2], 5: [2], 6: [3, 4], 7: [5, 6]}
     outgoing_links = {a: list(graph.successors(a)) for a in graph.nodes}
-    ## ex {1: [2, 3], 2: [4, 5], 3: [6], 4: [6], 5: [7], 6: [7], 7: []}
 
     # Create instances for EV and ICV
     ev = vehicles.EV(scalability)
@@ -63,14 +61,6 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             for b in incoming_links[a]:
                 for i in range(N+1):
                     f[m, b, a, i] = model.addVar(lb=0.0, name=f"f[{m},{b},{a},{i}]")
-
-    # alpha aggregate link-based share factor of vehicle class 𝑚 of formula 14.
-    # Must be defined as a variable because it depends on u, otherwise it cannot be computed
-    ## spiega nel ppt!!!!!!
-    alpha = model.addVars(E_A, M, range(1, N+1), lb=0.0, ub=1.0, name="alpha")
-    for a in E_A:
-        for i in range(1, N+1):
-            model.addConstr(gp.quicksum(alpha[a, m, i] for m in M) == 1.0)
 
     # Feasibility of path
                     
@@ -102,19 +92,19 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     travelW = {a: int((length[a]/ev.Wa)/timestep + 1e-9) for a in length}
     # Kronecker's delta for EV paths
     delta = {(a, p): int(a in paths[p]) for p in paths for a in E_A}
+    # At Tstop vehicles must not enter anymore, otherwise network cannot be cleared at time N (for formula 15)
+    Tstop = N/(2*ev.Da/ev.Qa/timestep + 1)
 
     for i in range(N+1):
         for m in M:
             for a in E:
                 # Formula 12: conservation of vehicle numbers
-                ##inflow = gp.quicksum(u[m, a, k] for k in range(i+1)) ## li ho uniti sotto
-                ##outflow = gp.quicksum(v[m, a, k] for k in range(i+1))
                 model.addConstr(n[m, a, i] - gp.quicksum(u[m, a, k] - v[m, a, k] for k in range(i+1)) == 0)
                 if a in E_A: # i.e. no source or sink link
                     if i >= travelV[a]: # formula 13: upstream capacity
                         model.addConstr(gp.quicksum(u[m, a, k] for k in range(max(0,i - travelV[a] + 1), i+1)) - n[m, a, i] <= 0)
                     if i >= travelW[a]: # Formula 14: downstream capacity 
-                        model.addConstr(n[m, a, i] + gp.quicksum(v[m, a, k] for k in range(max(0,i - travelW[a] + 1), i+1)) <= ev.Ka * length[a] * alpha[a, m, i])
+                        model.addConstr(n[m, a, i] + gp.quicksum(v[m, a, k] for k in range(max(0,i - travelW[a] + 1), i+1)) <= ev.Ka * length[a])
                     # Formula 19: flow capacity on links
                     inflow = gp.quicksum(f[m, b, a, i] for b in incoming_links[a])
                     if m == "EV":
@@ -128,9 +118,13 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
                     # Formula 17: flux conservation for outgoing vehicles
                     model.addConstr(v[m, a, i] - gp.quicksum(f[m, a, b, i] for b in outgoing_links[a]) == 0)
 
-        # Formula 15: source link constraint is the demand rate of vehicle
-        model.addConstr(u["EV", E_R, i] == ev.Da)
-        model.addConstr(u["ICV", E_R, i] == icv.Da)
+        if i <= Tstop:
+            # Formula 15: source link constraint is the demand rate of vehicle
+            model.addConstr(u["EV", E_R, i] == ev.Da)
+            model.addConstr(u["ICV", E_R, i] == icv.Da)
+        else: # then vehicles cannot enter anymore
+            model.addConstr(u["EV", E_R, i] == 0)
+            model.addConstr(u["ICV", E_R, i] == 0)
         # Formula 18: sink link constraint i.e. every vehicle has already exited
         model.addConstr(v["EV", E_S, i] == 0)
         model.addConstr(v["ICV", E_S, i] == 0)
@@ -153,23 +147,17 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= ev.Qa * timestep)
             model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= demand)
 
-    # Extra
-
-    # Over alpha for controlling which links are used depending on y and the maximum flow for each link
-    for i in range(1, N+1):
-        for a in E_A:
-            # If no feasible path goes in a, then alpha[EV] = 0, thus also EV flows = 0
-            model.addConstr(alpha[a, 'EV', i] <= gp.quicksum(delta[(a, p)] * y[p] for p in paths),name=f"alpha3")
-
-    # If a path is not feasible, no EV flow can be on its links
-    for p in paths:
-        for idx, a in enumerate(paths[p]):
-            for i in range(N+1):
-                for b in incoming_links[a]:
-                    model.addConstr(f['EV', b, a, i] <= ev.Qa * timestep * y[p], name=f"flowcap")
-
-
     # Set and optimize the objective function
+            
+    # Formula 1 with penalty coefficient 'o' (numerical value not explicitly specified)
+    penalty_coefficient = 0.001
+
+    # First term: weighted outflow to sink links
+    first_term = gp.quicksum((N + 1 - i) * f[(m, b, E_S, i)] for m in M for b in incoming_links[E_S] for i in range(N+1))
+    # Second term: penalty for vehicles remaining in the network
+    second_term = gp.quicksum(penalty_coefficient * (N + 1 - i) * f[m, b, a, i] for m in M for a in E[:-1] for b in incoming_links[a] for i in range(N+1))
+    
+    model.setObjective(first_term + second_term, gp.GRB.MAXIMIZE)
     #model.setObjective(gp.quicksum((N - i + 1) * f[m, b, E_S, i] for m in M for b in incoming_links[E_S] for i in range(1, N+1)), gp.GRB.MAXIMIZE)
     model.setObjective(gp.quicksum((N - i + 1) *f[(m, b, E_S, i)] for m in M for b in incoming_links[E_S] for i in range(1, N+1)), gp.GRB.MAXIMIZE)
     model.optimize()
