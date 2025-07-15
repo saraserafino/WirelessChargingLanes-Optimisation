@@ -19,6 +19,10 @@ The scalability analysis is performed on grid networks composed of 10, 28, 42, 5
 ```bash
 python scalability.py --grid-size 42
 ```
+The following plot shows the scalability of compilation time versus the dimension of the problem, where all instances are solved on a computer MacBook Air with Apple M1 processor (8-core, 8-thread, ARM64) and usable 8 GB RAM.
+<p align="center">
+  <img src="plots/Model scalability.png" /><br>
+</p>
 
 ## Requirements
 The algorithm is performed using a Gurobi solver, thus an active [Gurobi license](https://support.gurobi.com/hc/en-us/articles/12684663118993-How-do-I-obtain-a-Gurobi-license) is needed. <br>
