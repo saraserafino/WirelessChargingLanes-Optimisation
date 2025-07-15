@@ -26,6 +26,3 @@ The following Python packages - installable with `pip install [names] --user` - 
 - MatPlotLib for the plots in `test.py` and `plots.py`
 - NumPy for performing the cumulative sum in `test.py`
 - networkx for automatical generation of paths from edges
-- json for creating and importing the grid networks
-- time for the time wrapper returning the time of compilation
-- argparse for defining the parser in `scalability.py`.
