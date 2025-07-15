@@ -8,10 +8,10 @@ import time # for the wrapper execution_time
 def execution_time(func):
     def wrapper(*args):
         start = time.time()
-        model, x, y, B, n, u, v, f = func(*args)
+        model, x, y = func(*args)
         t_exec = time.time() - start
         print(f"Optimal solution found in {t_exec:.3f} s")
-        return model, x, y, B, n, u, v, f, t_exec
+        return model, x, y, t_exec
     return wrapper
 
 @execution_time
@@ -148,11 +148,11 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= ev.Qa * timestep)
             model.addConstr(gp.quicksum(v[m, a, i] for m in M) <= demand)
 
-    # Extra constraint
-            ##spiega nel ppt
-    epsilon_flow = 1e-3
+    # Extra constraint to avoid conflit with constraint 19, impose a minimum upstream traffic for feasible paths.
+    # Otherwise if there is too much congestion, constraint 19 makes y[p] = 0 even if it is feasible.
+    lambda_flow = 1e-3
     for p, link_list in paths.items():
-        model.addConstr(gp.quicksum(f["EV", b, a, i] for i in range(N+1) for a in link_list for b in incoming_links[a]) >= epsilon_flow * y[p])
+        model.addConstr(gp.quicksum(f["EV", b, a, i] for i in range(N+1) for a in link_list for b in incoming_links[a]) >= lambda_flow * y[p])
 
     # Set and optimize the objective function
             
@@ -167,7 +167,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     model.setObjective(first_term + second_term, gp.GRB.MAXIMIZE)
     model.optimize()
 
-    return model, x, y, B, n, u, v, f
+    return model, x, y
 
 
 def print_optimal_solution(length, graph, model, x, y):
