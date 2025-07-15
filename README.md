@@ -8,7 +8,11 @@ In particular, it contains:
 - a presentation explaining the project and some of our changes, also performing scalability and parameters analysis through plots (of which code can be found in `plots.py`).
 
 ## Abstract of the paper
-Wireless charging technologies have now made it possible to charge while driving, which offers the opportunity to stimulate the market penetration of electric vehicles. This paper aims to support the system planner in optimally deploying the wireless charging lanes on the network, considering traffic dynamics and congestion under multiple vehicle classes. The overall objective is to maximise network performance while providing insights into traffic propagation patterns over the network. A multi-class dynamic system optimal model is adopted to compute an approximate representation of the dynamic traffic flow. As a result, the problem is formulated as a mixed-integer linear program by integrating the dynamic routing behaviour into the charging location problem. Finally, the proposed framework has been tested on different sized test-bed networks to examine the solution quality and illustrate the model’s efficacy.
+Wireless charging technologies have now made it possible to charge while driving, which offers the opportunity to stimulate the market penetration of electric vehicles.<br>
+This paper aims to support the system planner in optimally deploying the wireless charging lanes on the network, considering traffic dynamics and congestion under multiple vehicle classes.<br>
+The overall objective is to maximise network performance while providing insights into traffic propagation patterns over the network. A multi-class dynamic system optimal model is adopted to compute an approximate representation of the dynamic traffic flow.<br>
+As a result, the problem is formulated as a mixed-integer linear program by integrating the dynamic routing behaviour into the charging location problem.<br>
+Finally, the proposed framework has been tested on different sized test-bed networks to examine the solution quality and illustrate the model’s efficacy.
 
 ## How to compile
 The scalability analysis is performed on grid networks composed of 10, 28, 42, 51 and 82 links. Therefore, the user can provide the size of the grid as parsed parameter; for example:
