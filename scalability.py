@@ -1,7 +1,6 @@
 from optimisation import *
 import json # for loading grid data
 import networkx as nx # for generating paths from edges without going crazy
-import matplotlib.pyplot as plt
 import argparse # for choosing the grid from command line
 
 # Script for testing the code on bigger instances for scalability purposes, following Grid Networks of section 4.2 of the paper.
@@ -30,5 +29,5 @@ G = nx.DiGraph()
 G.add_edges_from(edges)
 paths82 = list(nx.all_simple_paths(G, source=1, target=args.grid_size))
 
-scalability_model, x, y, t_exec = optimisation_model(link_length, G, T, timestep, scalability, I_budget)
+scalability_model, x, y, u, v, t_exec = optimisation_model(link_length, G, T, timestep, scalability, I_budget)
 print_optimal_solution(link_length, G, scalability_model, x, y)

@@ -1,5 +1,6 @@
 from optimisation import *
 import matplotlib.pyplot as plt
+import numpy as np
 import networkx as nx # for generating paths from edges without going crazy
 
 # Script for testing the code on a small instance, following Braess Network of section 4.1 of the paper.
@@ -17,7 +18,7 @@ I_budget = 1e6/500
 graph = nx.DiGraph()
 graph.add_edges_from(edges)
 
-test_model, x, y, t_exec = optimisation_model(link_length, graph, T, timestep, scalability, I_budget)
+test_model, x, y, u, v, t_exec = optimisation_model(link_length, graph, T, timestep, scalability, I_budget)
 print_optimal_solution(link_length, graph, test_model, x, y)
 
 # Inflow-outflow profiles of each vehicle class as in figure 3 of paper

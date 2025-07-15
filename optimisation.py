@@ -1,17 +1,16 @@
 import gurobipy as gp
-import numpy as np
 import vehicles
-import networkx as nx # for generating paths from edges without going crazy
+import networkx as nx # for automatical generation of paths from edges
 import time # for the wrapper execution_time
 
 # Decorator for computing the execution time
 def execution_time(func):
     def wrapper(*args):
         start = time.time()
-        model, x, y = func(*args)
+        model, x, y, u, v = func(*args)
         t_exec = time.time() - start
         print(f"Optimal solution found in {t_exec:.3f} s")
-        return model, x, y, t_exec
+        return model, x, y, u, v, t_exec
     return wrapper
 
 @execution_time
@@ -167,7 +166,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
     model.setObjective(first_term + second_term, gp.GRB.MAXIMIZE)
     model.optimize()
 
-    return model, x, y
+    return model, x, y, u, v
 
 
 def print_optimal_solution(length, graph, model, x, y):
