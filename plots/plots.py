@@ -11,7 +11,7 @@ plt.xlabel("Dimensionality")
 plt.ylabel("Time (s)")
 plt.savefig("Model scalability")
 
-# Plot parameters value's effect on compilation time
+# Parameters value's effect on execution time
 
 Ka = {0.05: 20.7, 0.08: 19.2, 0.10: 15.9, 0.12: 39.8, 0.15: 36.6, 0.20: 30.7}
 plt.figure(figsize=(8, 5))
@@ -39,7 +39,7 @@ plt.plot(VW.keys(), VW.values(), marker='o', linestyle='--', color='royalblue')
 for x, y in zip(VW.keys(), VW.values()):
     plt.text(x, y, f'({x}, {y})', fontsize=9, ha='left', va='bottom')
 plt.title("Free-flow and backward speed")
-plt.xlabel("Product of factor x per V or W  (m/min)")
+plt.xlabel("Factor of proportionality for V and W  (m/min)")
 plt.ylabel("Time (s)")
 plt.savefig("Free-flow and backward speed")
 
@@ -62,3 +62,19 @@ plt.title("Timestep")
 plt.xlabel("Timestep (min)")
 plt.ylabel("Time (s)")
 plt.savefig("Timestep")
+
+# Number of variables and constraints versus dimensionality
+variables = {10: 5276, 28: 15381, 42: 24094, 51: 29979, 82: 49384}
+constraints = {10: 8458, 28: 26040, 42: 41447, 51: 52439, 82: 92693}
+plt.figure(figsize=(8, 5))
+plt.plot(variables.keys(), variables.values(), label="variables", marker='o', linestyle='--', color='royalblue')
+plt.plot(constraints.keys(), constraints.values(), label="constraints", marker='o', linestyle='--', color='deeppink')
+for x, y in zip(variables.keys(), variables.values()):
+    plt.text(x, y, f'({x}, {y})', fontsize=9, ha='left', va='bottom')
+for x, y in zip(constraints.keys(), constraints.values()):
+    plt.text(x, y, f'({x}, {y})', fontsize=9, ha='left', va='bottom')
+plt.title("Number of variables and constraints versus dimensionality")
+plt.xlabel("Dimensionality")
+plt.ylabel("Number of variables/constraints")
+plt.legend()
+plt.savefig("Number of variables and constraints versus dimensionality")
