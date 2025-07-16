@@ -109,7 +109,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
                     if m == "EV":
                         model.addConstr(inflow <= ev.Qa * timestep * gp.quicksum(delta[(a,p)] * y[p] for p in paths))
                     else: # Also for upstream traffic of ICV vehicles, where here all paths are feasible
-                        model.addConstr(inflow <= icv.Qa * gp.quicksum(delta[(a,p)] for p in paths), name="19ICV")
+                        model.addConstr(inflow <= icv.Qa * timestep * gp.quicksum(delta[(a,p)] for p in paths), name="19ICV")
                 if a != E_R: # i.e. no source link
                     # Formula 16: flux conservation for incoming vehicles
                     model.addConstr(u[m, a, i] - gp.quicksum(f[m, b, a, i] for b in incoming_links[a]) == 0)
