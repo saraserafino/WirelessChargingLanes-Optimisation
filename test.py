@@ -1,7 +1,7 @@
 from optimisation import *
 import matplotlib.pyplot as plt
 import numpy as np
-import networkx as nx # for generating paths from edges without going crazy
+import networkx as nx # for automatical generation of paths from edges
 
 # Script for testing the code on a small instance, following Braess Network of section 4.1 of the paper.
 

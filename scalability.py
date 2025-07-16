@@ -1,6 +1,6 @@
 from optimisation import *
 import json # for loading grid data
-import networkx as nx # for generating paths from edges without going crazy
+import networkx as nx # for automatical generation of paths from edges
 import argparse # for choosing the grid from command line
 
 # Script for testing the code on bigger instances for scalability purposes, following Grid Networks of section 4.2 of the paper.
@@ -18,7 +18,7 @@ parser.add_argument('--grid-size', type=int, default=42, metavar='STR',
                       help='size of grid to test (chosen among 10, 28, 42, 51, 82)')
 args = parser.parse_args()
 
-# Import data of Grid-x
+# Import data of chosen grid
 with open(f"data/grid{args.grid_size}.json", "r") as f:
     data = json.load(f)
 
