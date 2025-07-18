@@ -76,7 +76,7 @@ def optimisation_model(length, graph, T, timestep, scalability, budget):
             # where length[a]/ev.Va=t0[a] travel time of link 𝑎 at velocity Va
             consume = ev.epsilon * length[a]
             # Formula 5: B[a,p] == min(Bmax, energy)
-            model.addConstr(B[(a, p)] <= ev.Bmax)
+            #model.addConstr(B[(a, p)] <= ev.Bmax)
             model.addConstr(B[(a, p)] <= prevB - consume + recharge * x[a] + Big_M * (1 - y[p]))
             model.addConstr(B[(a, p)] >= prevB - consume + recharge * x[a] - Big_M * (1 - y[p]))
             # Formula 6: feasibility of path (if feasible, B[a,p]>=0)
